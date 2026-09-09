@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aura • LiveKit & LangGraph Voice AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
+
+  <style>
+    :root {
+      --bg-dark: #07090e;
+      --bg-card: rgba(18, 22, 34, 0.7);
+      --bg-card-border: rgba(255, 255, 255, 0.08);
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --accent-cyan: #06b6d4;
+      --accent-purple: #8b5cf6;
+      --accent-magenta: #ec4899;
+      --accent-green: #10b981;
+      --accent-red: #ef4444;
+      --orb-glow: rgba(99, 102, 241, 0.35);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Outfit', sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      background: radial-gradient(circle at 50% 20%, #131726 0%, #080a10 60%, #040508 100%);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* Ambient background glowing orbs */
+    .ambient-glow-1 {
+      position: fixed;
+      top: -150px;
+      left: 10%;
+      width: 500px;
+      height: 500px;
+      background: radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, transparent 70%);
+      border-radius: 50%;
+      pointer-events: none;
+      filter: blur(80px);
+      z-index: 0;
+    }
+    .ambient-glow-2 {
+      position: fixed;
+      bottom: -150px;
+      right: 10%;
+      width: 550px;
+      height: 550px;
+      background: radial-gradient(circle, rgba(6, 182, 212, 0.12) 0%, transparent 70%);
+      border-radius: 50%;
+      pointer-events: none;
+      filter: blur(80px);
+      z-index: 0;
+    }
+
+    header {
+      position: relative;
+      z-index: 10;
+      padding: 1.5rem 2.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(12px);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+    }
+
+    .brand-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--accent-purple), var(--accent-cyan));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 20px rgba(139, 92, 246, 0.4);
+    }
+
+    .brand-icon svg {
+      width: 20px;
+      height: 20px;
+      fill: #fff;
+    }
+
+    .brand-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(to right, #fff, #cbd5e1);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-badge {
+      font-size: 0.72rem;
+      padding: 0.2rem 0.6rem;
+      background: rgba(139, 92, 246, 0.15);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      color: #c4b5fd;
+      border-radius: 20px;
+      font-weight: 500;
+      margin-left: 0.4rem;
+    }
+
+    .header-status {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--bg-card-border);
+      padding: 0.35rem 0.85rem;
+      border-radius: 30px;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #64748b;
+      transition: all 0.3s ease;
+    }
+
+    .status-dot.connected {
+      background: var(--accent-green);
+      box-shadow: 0 0 10px var(--accent-green);
+      animation: pulse 2s infinite;
+    }
+
+    .status-dot.connecting {
+      background: #f59e0b;
+      box-shadow: 0 0 10px #f59e0b;
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.3); opacity: 0.7; }
+    }
+
+    main {
+      flex: 1;
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1.5rem;
+      max-width: 900px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    /* Voice Orb Stage */
+    .orb-stage {
+      position: relative;
+      width: 320px;
+      height: 320px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 2rem;
+    }
+
+    canvas#orbCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      filter: drop-shadow(0 0 45px var(--orb-glow));
+      transition: filter 0.5s ease;
+    }
+
+    .orb-center-badge {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      pointer-events: none;
+    }
+
+    .orb-status-text {
+      font-size: 1.05rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: #fff;
+      text-shadow: 0 2px 10px rgba(0,0,0,0.6);
+      transition: all 0.3s ease;
+    }
+
+    .orb-sub-text {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 0.3rem;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Tool Activity Pill */
+    .tool-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(139, 92, 246, 0.12);
+      border: 1px solid rgba(139, 92, 246, 0.25);
+      color: #ddd6fe;
+      padding: 0.35rem 0.9rem;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      margin-top: 0.5rem;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .tool-pill.active {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Suggestion Chips */
+    .chips-container {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0.6rem;
+      margin-bottom: 2.2rem;
+      max-width: 650px;
+    }
+
+    .chip {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: #cbd5e1;
+      padding: 0.5rem 1rem;
+      border-radius: 25px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      transition: all 0.2s ease;
+      backdrop-filter: blur(8px);
+    }
+
+    .chip:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.2);
+      transform: translateY(-2px);
+      color: #fff;
+    }
+
+    /* Bottom Control Bar */
+    .controls-dock {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      background: var(--bg-card);
+      border: 1px solid var(--bg-card-border);
+      padding: 0.8rem 1.6rem;
+      border-radius: 50px;
+      box-shadow: 0 10px 35px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(20px);
+    }
+
+    .control-btn {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      border: none;
+      outline: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      position: relative;
+    }
+
+    .control-btn svg {
+      width: 22px;
+      height: 22px;
+      transition: transform 0.2s ease;
+    }
+
+    .control-btn:hover {
+      transform: scale(1.08);
+    }
+
+    .control-btn:active {
+      transform: scale(0.95);
+    }
+
+    /* Call Button */
+    .btn-call {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: #fff;
+      box-shadow: 0 0 25px rgba(16, 185, 129, 0.35);
+    }
+
+    .btn-call.in-call {
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+      box-shadow: 0 0 25px rgba(239, 68, 68, 0.4);
+    }
+
+    /* Mic Button */
+    .btn-mic {
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .btn-mic.muted {
+      background: rgba(239, 68, 68, 0.15);
+      border-color: rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+    }
+
+    /* Subtitles / Drawer Button */
+    .btn-toggle {
+      background: rgba(255, 255, 255, 0.08);
+      color: #cbd5e1;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .btn-toggle.active {
+      background: rgba(139, 92, 246, 0.2);
+      border-color: var(--accent-purple);
+      color: #c4b5fd;
+    }
+
+    /* Live Subtitles / Transcript Box */
+    .transcript-drawer {
+      width: 100%;
+      max-width: 650px;
+      background: var(--bg-card);
+      border: 1px solid var(--bg-card-border);
+      border-radius: 20px;
+      padding: 1.25rem 1.5rem;
+      margin-top: 1.5rem;
+      backdrop-filter: blur(16px);
+      max-height: 220px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.8rem;
+      transition: all 0.3s ease;
+    }
+
+    .transcript-drawer::-webkit-scrollbar {
+      width: 5px;
+    }
+    .transcript-drawer::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 10px;
+    }
+
+    .msg-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+
+    .msg-sender {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+    }
+
+    .msg-sender.agent {
+      color: var(--accent-cyan);
+    }
+
+    .msg-sender.user {
+      color: #a78bfa;
+    }
+
+    .msg-text {
+      font-size: 0.92rem;
+      line-height: 1.45;
+      color: #e2e8f0;
+    }
+
+    /* Footer */
+    footer {
+      position: relative;
+      z-index: 5;
+      padding: 1rem;
+      text-align: center;
+      font-size: 0.75rem;
+      color: #64748b;
+    }
+
+    footer a {
+      color: var(--accent-cyan);
+      text-decoration: none;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="ambient-glow-1"></div>
+  <div class="ambient-glow-2"></div>
+
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14h-2v-4h2v4zm0-6h-2V8h2v2zm4 6h-2V8h2v8z"/>
+        </svg>
+      </div>
+      <div>
+        <span class="brand-title">Aura Voice</span>
+      </div>
+    </div>
+
+    <div class="header-status">
+      <div class="status-pill">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="statusLabel">Disconnected</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Stage -->
+  <main>
+    <!-- Voice Orb -->
+    <div class="orb-stage">
+      <canvas id="orbCanvas" width="640" height="640"></canvas>
+      <div class="orb-center-badge">
+        <div class="orb-status-text" id="orbStatus">Tap Call to Start</div>
+        <div class="orb-sub-text" id="orbSub">Real-time WebRTC Voice</div>
+        <div class="tool-pill" id="toolPill">
+          <span>⚡</span>
+          <span id="toolName">Weather Tool</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Suggested Chips -->
+    <div class="chips-container" id="chipsContainer">
+      <div class="chip" onclick="suggestQuery('What is the weather in London right now?')">
+        <span>🌦️</span> London Weather
+      </div>
+      <div class="chip" onclick="suggestQuery('What are the latest news headlines about OpenAI?')">
+        <span>📰</span> OpenAI Headlines
+      </div>
+      <div class="chip" onclick="suggestQuery('What is the weather in Tokyo?')">
+        <span>🗼</span> Tokyo Forecast
+      </div>
+      <div class="chip" onclick="suggestQuery('Tell me an intriguing science fact')">
+        <span>✨</span> Fun Fact
+      </div>
+    </div>
+
+    <!-- Dock Controls -->
+    <div class="controls-dock">
+      <!-- Mute Button -->
+      <button class="control-btn btn-mic" id="btnMic" title="Mute / Unmute" onclick="toggleMute()" disabled>
+        <svg id="micIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+          <line x1="12" y1="19" x2="12" y2="23"></line>
+          <line x1="8" y1="23" x2="16" y2="23"></line>
+        </svg>
+      </button>
+
+      <!-- Main Call Toggle Button -->
+      <button class="control-btn btn-call" id="btnCall" title="Start Call" onclick="toggleCall()">
+        <svg id="callIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+        </svg>
+      </button>
+
+      <!-- Transcript Toggle Button -->
+      <button class="control-btn btn-toggle active" id="btnTranscript" title="Toggle Live Transcript" onclick="toggleTranscript()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Live Transcript Box -->
+    <div class="transcript-drawer" id="transcriptDrawer">
+      <div class="msg-row">
+        <span class="msg-sender agent">Aura AI</span>
+        <span class="msg-text">Ready to assist. Tap the green call button to speak with me directly.</span>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // State management
+    let room = null;
+    let isConnected = false;
+    let isMuted = false;
+    let audioContext = null;
+    let micAnalyser = null;
+    let agentAnalyser = null;
+    let micStream = null;
+    let currentAgentState = 'idle'; // 'idle', 'listening', 'thinking', 'speaking'
+
+    const statusDot = document.getElementById('statusDot');
+    const statusLabel = document.getElementById('statusLabel');
+    const orbStatus = document.getElementById('orbStatus');
+    const orbSub = document.getElementById('orbSub');
+    const btnCall = document.getElementById('btnCall');
+    const btnMic = document.getElementById('btnMic');
+    const btnTranscript = document.getElementById('btnTranscript');
+    const transcriptDrawer = document.getElementById('transcriptDrawer');
+    const toolPill = document.getElementById('toolPill');
+    const toolName = document.getElementById('toolName');
+
+    // Canvas visualizer setup
+    const canvas = document.getElementById('orbCanvas');
+    const ctx = canvas.getContext('2d');
+    let animationFrameId = null;
+    let phase = 0;
+
+    function renderOrb() {
+      const width = canvas.width;
+      const height = canvas.height;
+      const centerX = width / 2;
+      const centerY = height / 2;
+
+      ctx.clearRect(0, 0, width, height);
+      phase += 0.035;
+
+      // Determine audio level based on current state
+      let audioVolume = 0;
+      if (currentAgentState === 'speaking' && agentAnalyser) {
+        const data = new Uint8Array(agentAnalyser.frequencyBinCount);
+        agentAnalyser.getByteFrequencyData(data);
+        audioVolume = data.reduce((a, b) => a + b, 0) / (data.length * 255);
+      } else if (currentAgentState === 'listening' && micAnalyser) {
+        const data = new Uint8Array(micAnalyser.frequencyBinCount);
+        micAnalyser.getByteFrequencyData(data);
+        audioVolume = data.reduce((a, b) => a + b, 0) / (data.length * 255);
+      }
+
+      // Base radius with reactive pulsing
+      const baseRadius = 140 + audioVolume * 90;
+
+      // Draw multi-layered harmonic aura
+      const layerCount = 4;
+      for (let l = 0; l < layerCount; l++) {
+        ctx.beginPath();
+        const layerPhase = phase + l * 0.9;
+        const colorFactor = (l / layerCount);
+
+        // Dynamic gradients depending on state
+        let grad = ctx.createRadialGradient(centerX, centerY, 40, centerX, centerY, baseRadius + 30);
+        if (currentAgentState === 'speaking') {
+          grad.addColorStop(0, 'rgba(236, 72, 153, 0.45)');
+          grad.addColorStop(0.5, 'rgba(139, 92, 246, 0.3)');
+          grad.addColorStop(1, 'rgba(6, 182, 212, 0)');
+        } else if (currentAgentState === 'listening') {
+          grad.addColorStop(0, 'rgba(6, 182, 212, 0.45)');
+          grad.addColorStop(0.5, 'rgba(16, 185, 129, 0.25)');
+          grad.addColorStop(1, 'rgba(59, 130, 246, 0)');
+        } else if (currentAgentState === 'thinking') {
+          grad.addColorStop(0, 'rgba(245, 158, 11, 0.45)');
+          grad.addColorStop(0.6, 'rgba(139, 92, 246, 0.3)');
+          grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        } else {
+          // Idle ambient
+          grad.addColorStop(0, 'rgba(99, 102, 241, 0.3)');
+          grad.addColorStop(0.7, 'rgba(139, 92, 246, 0.15)');
+          grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        }
+
+        ctx.fillStyle = grad;
+
+        // Draw organic wavy contour
+        const points = 36;
+        for (let i = 0; i <= points; i++) {
+          const angle = (i / points) * Math.PI * 2;
+          const waveFreq = 3 + l;
+          const waveAmp = (15 + audioVolume * 45) * Math.sin(layerPhase + angle * waveFreq);
+          const r = baseRadius + waveAmp;
+          const x = centerX + Math.cos(angle) * r;
+          const y = centerY + Math.sin(angle) * r;
+
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // Inner glass core sphere
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, 80, 0, Math.PI * 2);
+      let coreGrad = ctx.createRadialGradient(centerX - 20, centerY - 20, 10, centerX, centerY, 80);
+      coreGrad.addColorStop(0, 'rgba(255, 255, 255, 0.25)');
+      coreGrad.addColorStop(0.8, 'rgba(20, 25, 45, 0.85)');
+      coreGrad.addColorStop(1, 'rgba(10, 12, 22, 0.95)');
+      ctx.fillStyle = coreGrad;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      animationFrameId = requestAnimationFrame(renderOrb);
+    }
+
+    renderOrb();
+
+    // Call Connection Management
+    async function toggleCall() {
+      if (isConnected) {
+        disconnectCall();
+      } else {
+        await connectCall();
+      }
+    }
+
+    async function connectCall() {
+      try {
+        updateUIState('connecting');
+
+        // 1. Fetch LiveKit Token from Python server
+        const resp = await fetch('/api/token');
+        if (!resp.ok) {
+          throw new Error(`Token endpoint failed with status: ${resp.status}`);
+        }
+        const data = await resp.json();
+        const { token, url, room: roomName } = data;
+
+        // 2. Initialize Web Audio Context for visualizer
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        // 3. Initialize LiveKit Room
+        room = new LivekitClient.Room({
+          adaptiveStream: true,
+          dynacast: true,
+        });
+
+        // Set up event handlers
+        room.on(LivekitClient.RoomEvent.Connected, () => {
+          isConnected = true;
+          updateUIState('connected');
+          addTranscriptMessage('System', `Connected to voice room (${roomName}). Say hello!`);
+        });
+
+        room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
+          if (track.kind === LivekitClient.Track.Kind.Audio) {
+            const el = track.attach();
+            el.id = 'agentAudio';
+            document.body.appendChild(el);
+
+            // Connect to audio analyser
+            try {
+              const source = audioContext.createMediaStreamSource(new MediaStream([track.mediaStreamTrack]));
+              agentAnalyser = audioContext.createAnalyser();
+              agentAnalyser.fftSize = 64;
+              source.connect(agentAnalyser);
+            } catch (e) {
+              console.warn('Could not attach analyser to audio track:', e);
+            }
+          }
+        });
+
+        room.on(LivekitClient.RoomEvent.ActiveSpeakersChanged, (speakers) => {
+          if (speakers.length > 0) {
+            const speaker = speakers[0];
+            if (speaker === room.localParticipant) {
+              currentAgentState = 'listening';
+              orbStatus.textContent = 'Listening to you...';
+              orbSub.textContent = 'Speak naturally';
+            } else {
+              currentAgentState = 'speaking';
+              orbStatus.textContent = 'Aura Speaking';
+              orbSub.textContent = 'Cartesia Sonic-3';
+            }
+          } else {
+            currentAgentState = 'idle';
+            orbStatus.textContent = 'Aura Listening';
+            orbSub.textContent = 'Say a question or command';
+          }
+        });
+
+        room.on(LivekitClient.RoomEvent.Disconnected, () => {
+          disconnectCall();
+        });
+
+        // 4. Connect to Room & enable microphone
+        await room.connect(url, token);
+        await room.localParticipant.setMicrophoneEnabled(true);
+
+        // Setup local microphone analyser
+        try {
+          micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const micSource = audioContext.createMediaStreamSource(micStream);
+          micAnalyser = audioContext.createAnalyser();
+          micAnalyser.fftSize = 64;
+          micSource.connect(micAnalyser);
+        } catch (e) {
+          console.warn('Microphone analyser setup error:', e);
+        }
+
+      } catch (err) {
+        console.error('Call connection error:', err);
+        alert(`Failed to connect to voice agent: ${err.message}\nMake sure your agent worker (uv run agent.py dev) is running!`);
+        disconnectCall();
+      }
+    }
+
+    function disconnectCall() {
+      if (room) {
+        try { room.disconnect(); } catch (e) {}
+        room = null;
+      }
+      if (micStream) {
+        micStream.getTracks().forEach(t => t.stop());
+        micStream = null;
+      }
+      isConnected = false;
+      isMuted = false;
+      currentAgentState = 'idle';
+      updateUIState('disconnected');
+      addTranscriptMessage('System', 'Call ended.');
+    }
+
+    // Toggle Microphone Mute
+    async function toggleMute() {
+      if (!room || !isConnected) return;
+      isMuted = !isMuted;
+      await room.localParticipant.setMicrophoneEnabled(!isMuted);
+
+      if (isMuted) {
+        btnMic.classList.add('muted');
+        btnMic.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="1" y1="1" x2="23" y2="23"></line>
+          <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path>
+          <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"></path>
+          <line x1="12" y1="19" x2="12" y2="23"></line>
+          <line x1="8" y1="23" x2="16" y2="23"></line>
+        </svg>`;
+      } else {
+        btnMic.classList.remove('muted');
+        btnMic.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+          <line x1="12" y1="19" x2="12" y2="23"></line>
+          <line x1="8" y1="23" x2="16" y2="23"></line>
+        </svg>`;
+      }
+    }
+
+    function toggleTranscript() {
+      const isHidden = transcriptDrawer.style.display === 'none';
+      transcriptDrawer.style.display = isHidden ? 'flex' : 'none';
+      btnTranscript.classList.toggle('active', isHidden);
+    }
+
+    function updateUIState(state) {
+      if (state === 'connecting') {
+        statusDot.className = 'status-dot connecting';
+        statusLabel.textContent = 'Connecting...';
+        orbStatus.textContent = 'Connecting...';
+        orbSub.textContent = 'Setting up WebRTC channel';
+        btnCall.disabled = true;
+      } else if (state === 'connected') {
+        statusDot.className = 'status-dot connected';
+        statusLabel.textContent = 'Live Session';
+        orbStatus.textContent = 'Aura Listening';
+        orbSub.textContent = 'Ask anything or use a tool';
+        btnCall.disabled = false;
+        btnCall.classList.add('in-call');
+        btnCall.title = 'End Call';
+        btnCall.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>`;
+        btnMic.disabled = false;
+      } else {
+        statusDot.className = 'status-dot';
+        statusLabel.textContent = 'Disconnected';
+        orbStatus.textContent = 'Tap Call to Start';
+        orbSub.textContent = 'Real-time WebRTC Voice';
+        btnCall.disabled = false;
+        btnCall.classList.remove('in-call');
+        btnCall.title = 'Start Call';
+        btnCall.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+        </svg>`;
+        btnMic.disabled = true;
+        btnMic.classList.remove('muted');
+        toolPill.classList.remove('active');
+      }
+    }
+
+    function addTranscriptMessage(sender, text) {
+      const row = document.createElement('div');
+      row.className = 'msg-row';
+      const isAgent = sender.toLowerCase().includes('agent') || sender.toLowerCase().includes('aura');
+      const senderClass = isAgent ? 'msg-sender agent' : (sender === 'System' ? 'msg-sender' : 'msg-sender user');
+      row.innerHTML = `<span class="${senderClass}">${sender}</span><span class="msg-text">${text}</span>`;
+      transcriptDrawer.appendChild(row);
+      transcriptDrawer.scrollTop = transcriptDrawer.scrollHeight;
+    }
+
+    function suggestQuery(text) {
+      if (!isConnected) {
+        alert('Please click the green call button to start the voice session first!');
+        return;
+      }
+      addTranscriptMessage('You (Prompt Suggestion)', text);
+    }
+  </script>
+</body>
+</html>
