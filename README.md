@@ -15,6 +15,10 @@ Powered by **Groq (`openai/gpt-oss-20b`)**, the agent autonomously decides wheth
   - [Real-time Token Streaming Bridge (`VoiceGraphWrapper`)](#real-time-token-streaming-bridge-voicegraphwrapper)
 - [🛠️ Tool Specifications](#️-tool-specifications)
 - [🎨 Custom Aesthetic Voice Web UI](#-custom-aesthetic-voice-web-ui)
+- [🔍 Observability & Tracing with Langfuse](#-observability--tracing-with-langfuse)
+  - [How Langfuse Integrates with LiveKit](#how-langfuse-integrates-with-livekit)
+  - [Trace Telemetry Breakdown](#trace-telemetry-breakdown)
+  - [Langfuse Cloud Dashboard](#langfuse-cloud-dashboard)
 - [📊 Key Metrics & Telemetry](#-key-metrics--telemetry)
 - [📋 Prerequisites & API Keys](#-prerequisites--api-keys)
 - [📦 Dependencies & Installation](#-dependencies--installation)
@@ -89,6 +93,17 @@ Powered by **Groq (`openai/gpt-oss-20b`)**, the agent autonomously decides wheth
                                                 │                      │
                                                 ▼                      │
                                       🔊 Spoken Audio Out              │
+                                                │                      │
+        ═════════════════════════════════════════╪══════════════════════╪══════════════════════════════
+                                                │ OpenTelemetry Span Processor
+                                                ▼
+                                     ┌─────────────────────┐
+                                     │ 🔭 Langfuse Tracing │
+                                     │ ├─ Session Id (Room)│
+                                     │ ├─ STT/TTS Latency  │
+                                     │ ├─ Token Usage/Costs│
+                                     │ └─ Tool Observations│
+                                     └─────────────────────┘
 ```
 
 ---
@@ -181,6 +196,51 @@ A standalone, zero-build web interface is included in [`langgraph-livekit/ui/`](
 
 ---
 
+## 🔍 Observability & Tracing with Langfuse
+
+This project features native, production-grade observability powered by **[Langfuse](https://langfuse.com)** and **OpenTelemetry**. Every conversation, speech recognition turn, tool execution, and audio synthesis event is automatically captured and streamed to your Langfuse dashboard.
+
+### How Langfuse Integrates with LiveKit
+
+LiveKit Agents includes built-in OpenTelemetry support. Our integration ([`telemetry_langfuse.py`](langgraph-livekit/telemetry_langfuse.py)) registers Langfuse as an OpenTelemetry span processor:
+
+```python
+from langfuse import Langfuse
+from opentelemetry.sdk.trace import TracerProvider
+from livekit.agents.telemetry import set_tracer_provider
+
+def setup_langfuse(metadata=None):
+    trace_provider = TracerProvider()
+    set_tracer_provider(trace_provider, metadata=metadata)
+    Langfuse(
+        public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
+        secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
+        base_url=os.getenv("LANGFUSE_BASE_URL"),
+        tracer_provider=trace_provider,
+        should_export_span=lambda span: True,
+    )
+    return trace_provider
+```
+
+### Trace Telemetry Breakdown
+
+1. **Session & Room Correlation**: Each LiveKit room session is mapped directly to `langfuse.session.id = ctx.room.name`, allowing you to inspect full multi-turn conversations grouped by room or caller ID.
+2. **Speech-to-Text (STT) Spans**: Captures transcription latency, active audio stream intervals, and fallback switches (AssemblyAI ➔ Deepgram).
+3. **LangGraph Agent & Tool Execution**:
+   - The conversational agent node is decorated with `@observe(name="langgraph_agent_node")`.
+   - Tool calls (`get_weather`, `get_news`) are instrumented with `@observe`, capturing precise arguments (`city`, `query`), execution latency, and return values.
+4. **Text-to-Speech (TTS) Spans**: Tracks synthesis time, TTFA (Time to First Audio), token consumption, and fallback audio providers (Cartesia ➔ Inworld).
+5. **Zero Data Loss on Shutdown**: Registers `trace_provider.force_flush()` via `ctx.add_shutdown_callback` to ensure all pending spans are securely transmitted when participants disconnect or the worker shuts down.
+
+### Langfuse Cloud Dashboard
+
+Navigate to [Langfuse Cloud](https://cloud.langfuse.com) (or [US Region](https://us.cloud.langfuse.com)) to inspect:
+- **Trace Waterfall**: Millisecond-accurate breakdown of VAD, STT, LLM reasoning, tool calls, and TTS synthesis.
+- **Token & Cost Analytics**: Cumulative prompt, completion, and reasoning tokens across sessions.
+- **Latency Breakdown**: Compare TTFT (Time to First Token) vs TTFA (Time to First Audio) to isolate network and synthesis bottlenecks.
+
+---
+
 ## 📊 Key Metrics & Telemetry
 
 The agent includes built-in telemetry registered in [`setup_session_telemetry()`](langgraph-livekit/agent.py):
@@ -203,6 +263,7 @@ Ensure credentials are configured for the following services:
 | :--- | :--- | :--- |
 | **LiveKit Cloud** | WebRTC media transport & STT/TTS routing | [cloud.livekit.io](https://cloud.livekit.io) |
 | **Groq Cloud** | Ultra-fast LLM inference (`openai/gpt-oss-20b`) | [console.groq.com](https://console.groq.com) |
+| **Langfuse Cloud** | Production voice agent tracing & observability | [cloud.langfuse.com](https://cloud.langfuse.com) |
 | **OpenWeather** | Real-time global weather data | [openweathermap.org/api](https://openweathermap.org/api) |
 | **DuckDuckGo** | Free real-time web & news search | *No API key required* |
 
@@ -222,6 +283,8 @@ dependencies = [
     "langgraph>=1.2.11",
     "langchain-groq>=1.1.3",
     "langchain-community>=0.4.2",
+    "langfuse>=2.0.0",
+    "opentelemetry-sdk>=1.25.0",
     "duckduckgo-search>=8.1.1",
     "httpx>=0.28.0",
     "python-dotenv>=1.2.3",
@@ -260,6 +323,11 @@ LIVEKIT_API_SECRET=secret_...
 
 # Groq Cloud API Key
 GROQ_API_KEY=gsk_...
+
+# Langfuse Observability & Tracing
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_BASE_URL=https://us.cloud.langfuse.com # Or https://cloud.langfuse.com (EU)
 
 # OpenWeather API Key
 OPENWEATHER_API_KEY=your_openweather_api_key
@@ -315,14 +383,29 @@ uv run agent.py start
 
 ## 🧪 Automated Testing & Diagnostics
 
-A standalone test suite [`langgraph-livekit/test_tools.py`](langgraph-livekit/test_tools.py) is included to verify all tools and workflows end-to-end without needing an active WebRTC session:
+The project includes two standalone automated test suites to verify system functionality without needing an active browser session:
+
+### 1. Langfuse Observability Test Suite (`test_langfuse.py`)
+Verifies your Langfuse credentials, OpenTelemetry tracer provider registration, synthetic voice pipeline spans, and live cloud export:
 
 ```bash
-cd langgraph-livekit
-uv run python test_tools.py
+uv run python langgraph-livekit/test_langfuse.py
 ```
 
-### What the Test Suite Verifies:
+**What it validates:**
+- **Cloud Authentication**: Verifies `LANGFUSE_PUBLIC_KEY` & `LANGFUSE_SECRET_KEY` against `LANGFUSE_BASE_URL`.
+- **OpenTelemetry Bridge**: Confirms `setup_langfuse()` links the tracer provider with `livekit.agents.telemetry`.
+- **Span Generation**: Emits simulated session, STT, `@observe` tool call, and TTS spans with session IDs.
+- **Trace Export**: Verifies that `trace_provider.force_flush()` flushes the telemetry batch to Langfuse Cloud with 0 errors.
+
+### 2. LangGraph Agent & Tool Calling Suite (`test_tools.py`)
+Verifies both Weather and News tools independently and within the end-to-end LangGraph tool-calling agent workflow:
+
+```bash
+uv run python langgraph-livekit/test_tools.py
+```
+
+**What it validates:**
 1. **Direct Weather Tool (`get_weather`)**: Confirms OpenWeather API returns live temperature, weather conditions, and humidity.
 2. **Direct News Tool (`get_news`)**: Confirms `DuckDuckGoSearchRun` executes and extracts article headlines.
 3. **End-to-End Weather Tool-Calling Flow**: Sends `"What is the weather in London right now?"` and verifies that the LLM invokes `get_weather` and returns a voice-ready response.
@@ -346,22 +429,36 @@ uv run python test_tools.py
 - DuckDuckGo's `/news.js` endpoint can periodically return HTTP 403 for automated scrapers or non-standard queries.
 - `get_news` handles this gracefully: if `ddg_news_tool` encounters an exception or returns empty, it automatically triggers `ddg_text_tool` web search with `f"{query} news"`.
 
+### Langfuse Observability & Debug Mode
+If traces are not appearing in your Langfuse dashboard:
+1. **Enable Debug Mode**:
+   ```bash
+   export LANGFUSE_DEBUG="True"
+   ```
+2. **Check Base URL / Data Region**:
+   - 🇺🇸 US Cloud: `LANGFUSE_BASE_URL="https://us.cloud.langfuse.com"`
+   - 🇪🇺 EU Cloud: `LANGFUSE_BASE_URL="https://cloud.langfuse.com"`
+3. **Verify Flush Callbacks**: Ensure `ctx.add_shutdown_callback(trace_provider.force_flush)` is registered to export buffered spans before worker process termination.
+
 ---
 
 ## 📁 Repository Structure
 
 ```
 livekit-voice-agent/
-├── .env.example                # Sanitized environment credentials template
+├── .env.example                # Sanitized environment credentials template (includes Langfuse)
 ├── .gitignore                  # Comprehensive gitignore rules
 ├── .python-version             # Python version pin (3.13)
-├── pyproject.toml              # Dependencies & project metadata
+├── pyproject.toml              # Dependencies & project metadata (includes langfuse & opentelemetry-sdk)
 ├── uv.lock                     # Locked dependency tree
 ├── README.md                   # Consolidated project documentation
-├── livekit-agent.py            # Original LiveKit reference agent
+├── livekit-agent.py            # Reference LiveKit agent with fallback adapters & Langfuse
+├── telemetry_langfuse.py       # Root Langfuse OpenTelemetry setup helper
 ├── image.png                   # Turn-detection visual reference
 └── langgraph-livekit/
-    ├── agent.py                # Main LangGraph tool-calling voice agent
+    ├── agent.py                # Main LangGraph tool-calling voice agent with Langfuse tracing
+    ├── telemetry_langfuse.py   # Langfuse OpenTelemetry configuration module
+    ├── test_langfuse.py        # Automated Langfuse connectivity & tracing verification
     ├── test_tools.py           # Automated diagnostic test suite
     └── ui/
         ├── server.py           # Lightweight token-issuing web server
@@ -372,9 +469,12 @@ livekit-voice-agent/
 
 ## 📚 References & Further Reading
 
+- [Langfuse LiveKit Integration Guide](https://langfuse.com/integrations/frameworks/livekit)
+- [Langfuse Observability & Tracing Documentation](https://langfuse.com/docs)
 - [Worksh.app LiveKit Voice Agent Tutorial: Introduction](https://worksh.app/tutorials/livekit-voice-agent/introduction)
 - [Worksh.app LiveKit Voice Agent: Semantic Turn Detection](https://worksh.app/tutorials/livekit-voice-agent/semantic-turn-detection)
 - [LiveKit Agents Documentation](https://docs.livekit.io/agents/)
 - [LiveKit LangChain Plugin Guide](https://docs.livekit.io/agents/models/llm/langchain/)
 - [LangChain DuckDuckGo Search Tool](https://reference.langchain.com/python/langchain-community/tools/ddg_search/tool/DuckDuckGoSearchRun)
 - [LangGraph Documentation](https://langchain-ai.github.io/langgraph/)
+

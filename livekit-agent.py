@@ -13,6 +13,8 @@ from livekit.agents import llm, stt, tts, inference
 from livekit.agents import AgentStateChangedEvent, MetricsCollectedEvent, metrics
 import time
 
+from telemetry_langfuse import setup_langfuse
+
 logger = logging.getLogger(__name__)
 
 load_dotenv()
@@ -32,6 +34,19 @@ server = AgentServer()
 
 @server.rtc_session()
 async def EntryPoint(ctx: JobContext):
+    # Initialize Langfuse OpenTelemetry tracing
+    trace_provider = setup_langfuse(
+        metadata={
+            "langfuse.session.id": ctx.room.name,
+        }
+    )
+    if trace_provider:
+        async def flush_langfuse_traces():
+            logger.info("Flushing Langfuse traces on shutdown...")
+            trace_provider.force_flush()
+
+        ctx.add_shutdown_callback(flush_langfuse_traces)
+
     session = AgentSession(
         # LLM with fallback: OpenAI primary, Gemini backup
         llm=llm.FallbackAdapter(

@@ -47,6 +47,12 @@ from livekit.agents import (
 from livekit.plugins import noise_cancellation, silero
 from livekit.plugins.langchain import LLMAdapter
 
+from langfuse import observe
+try:
+    from telemetry_langfuse import setup_langfuse
+except ImportError:
+    from langgraph_livekit.telemetry_langfuse import setup_langfuse
+
 # ==============================================================================
 # 1. Configuration & Environment Setup
 # ==============================================================================
@@ -68,6 +74,7 @@ ddg_text_tool = DuckDuckGoSearchRun(api_wrapper=DuckDuckGoSearchAPIWrapper(max_r
 
 
 @tool
+@observe(name="get_weather")
 async def get_weather(city: str) -> str:
     """Get the current weather and temperature for a given city or location."""
     if not OPENWEATHER_API_KEY:
@@ -98,6 +105,7 @@ async def get_weather(city: str) -> str:
 
 
 @tool
+@observe(name="get_news")
 async def get_news(query: str) -> str:
     """Get the latest news headlines and recent events for a topic, person, company, or location."""
     logger.info("Executing get_news tool for query: '%s'", query)
@@ -143,6 +151,7 @@ class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
 
 
+@observe(name="langgraph_agent_node")
 async def agent_node(state: AgentState) -> dict:
     """Agent node: decides whether to respond directly or invoke tools."""
     system_prompt = (
@@ -257,6 +266,19 @@ server = AgentServer()
 async def EntryPoint(ctx: JobContext):
     """RTC Session entrypoint: mounts LangGraph agent, STT/TTS fallbacks, and BVC audio."""
     logger.info("Initializing LiveKit RTC Session for room: %s", ctx.room.name)
+
+    # Initialize Langfuse OpenTelemetry tracing
+    trace_provider = setup_langfuse(
+        metadata={
+            "langfuse.session.id": ctx.room.name,
+        }
+    )
+    if trace_provider:
+        async def flush_langfuse_traces():
+            logger.info("Flushing Langfuse traces on session shutdown...")
+            trace_provider.force_flush()
+
+        ctx.add_shutdown_callback(flush_langfuse_traces)
 
     # Compile the LangGraph tool-calling agent workflow
     langgraph_workflow = build_langgraph_workflow()
