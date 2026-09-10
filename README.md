@@ -383,34 +383,35 @@ uv run agent.py start
 
 ## 🧪 Automated Testing & Diagnostics
 
-The project includes two standalone automated test suites to verify system functionality without needing an active browser session:
+The project includes a comprehensive suite of automated tests to verify system functionality and resilience across all edge cases without needing an active browser session:
 
-### 1. Langfuse Observability Test Suite (`test_langfuse.py`)
+### 1. Comprehensive Edge-Case Test Suite (`test_edgecases.py`)
+Verifies full system resilience across edge cases and error conditions:
+
+```bash
+uv run python langgraph-livekit/test_edgecases.py
+```
+
+**What it validates:**
+- **Weather Tool Edge Cases**: Standard cities (`Tokyo`), multi-word locations (`San Francisco`), accented Unicode cities (`São Paulo`), empty/whitespace strings (graceful prompts), and non-existent cities (404 handled gracefully).
+- **News Tool Edge Cases**: Standard queries (`Artificial Intelligence`), special characters/symbols (`NVIDIA & AMD @ 2026!?`), empty/whitespace queries, and automatic fallback search.
+- **Workflow & Streaming**: 10-message context windowing, `@observe` span creation, and strict `VoiceGraphWrapper` suppression preventing `ToolMessage` chunks from leaking into the audio stream.
+- **Langfuse Configuration & Safe Flush**: Tests `is_langfuse_configured()`, empty-key graceful fallback, `flush_langfuse(None)` safe no-op, and active nested trace flush.
+- **UI Server & Token Generation**: Route registration (`/`, `/health`, `/api/token`), JWT signing, and room grants.
+
+### 2. Langfuse Observability Test Suite (`test_langfuse.py`)
 Verifies your Langfuse credentials, OpenTelemetry tracer provider registration, synthetic voice pipeline spans, and live cloud export:
 
 ```bash
 uv run python langgraph-livekit/test_langfuse.py
 ```
 
-**What it validates:**
-- **Cloud Authentication**: Verifies `LANGFUSE_PUBLIC_KEY` & `LANGFUSE_SECRET_KEY` against `LANGFUSE_BASE_URL`.
-- **OpenTelemetry Bridge**: Confirms `setup_langfuse()` links the tracer provider with `livekit.agents.telemetry`.
-- **Span Generation**: Emits simulated session, STT, `@observe` tool call, and TTS spans with session IDs.
-- **Trace Export**: Verifies that `trace_provider.force_flush()` flushes the telemetry batch to Langfuse Cloud with 0 errors.
-
-### 2. LangGraph Agent & Tool Calling Suite (`test_tools.py`)
+### 3. LangGraph Agent & Tool Calling Suite (`test_tools.py`)
 Verifies both Weather and News tools independently and within the end-to-end LangGraph tool-calling agent workflow:
 
 ```bash
 uv run python langgraph-livekit/test_tools.py
 ```
-
-**What it validates:**
-1. **Direct Weather Tool (`get_weather`)**: Confirms OpenWeather API returns live temperature, weather conditions, and humidity.
-2. **Direct News Tool (`get_news`)**: Confirms `DuckDuckGoSearchRun` executes and extracts article headlines.
-3. **End-to-End Weather Tool-Calling Flow**: Sends `"What is the weather in London right now?"` and verifies that the LLM invokes `get_weather` and returns a voice-ready response.
-4. **End-to-End News Tool-Calling Flow**: Sends `"What are the top news headlines about OpenAI today?"` and verifies that the LLM invokes `get_news` and summarizes the results.
-5. **Direct General Chat Flow**: Sends `"Hello! How are you doing today?"` and verifies that the agent responds immediately without triggering unnecessary tool calls.
 
 ---
 
@@ -458,10 +459,11 @@ livekit-voice-agent/
 └── langgraph-livekit/
     ├── agent.py                # Main LangGraph tool-calling voice agent with Langfuse tracing
     ├── telemetry_langfuse.py   # Langfuse OpenTelemetry configuration module
+    ├── test_edgecases.py       # Comprehensive edge-case & resilience test suite
     ├── test_langfuse.py        # Automated Langfuse connectivity & tracing verification
     ├── test_tools.py           # Automated diagnostic test suite
     └── ui/
-        ├── server.py           # Lightweight token-issuing web server
+        ├── server.py           # Lightweight token-issuing web server (with /health)
         └── index.html          # Aesthetic reactive voice web UI
 ```
 

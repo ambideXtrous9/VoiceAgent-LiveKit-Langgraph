@@ -13,7 +13,7 @@ from livekit.agents import llm, stt, tts, inference
 from livekit.agents import AgentStateChangedEvent, MetricsCollectedEvent, metrics
 import time
 
-from telemetry_langfuse import setup_langfuse
+from telemetry_langfuse import flush_langfuse, setup_langfuse
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +42,7 @@ async def EntryPoint(ctx: JobContext):
     )
     if trace_provider:
         async def flush_langfuse_traces():
-            logger.info("Flushing Langfuse traces on shutdown...")
-            trace_provider.force_flush()
+            flush_langfuse(trace_provider)
 
         ctx.add_shutdown_callback(flush_langfuse_traces)
 

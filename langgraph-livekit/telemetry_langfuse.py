@@ -23,6 +23,13 @@ logger = logging.getLogger("livekit.langfuse")
 load_dotenv(find_dotenv())
 
 
+def is_langfuse_configured() -> bool:
+    """Check if Langfuse credentials are present in environment variables."""
+    pk = os.getenv("LANGFUSE_PUBLIC_KEY")
+    sk = os.getenv("LANGFUSE_SECRET_KEY")
+    return bool(pk and sk)
+
+
 def setup_langfuse(
     metadata: Optional[dict[str, AttributeValue]] = None,
     *,
@@ -43,13 +50,12 @@ def setup_langfuse(
     Returns:
         TracerProvider instance if successfully configured, or None if keys are missing.
     """
-    public_key = public_key or os.getenv("LANGFUSE_PUBLIC_KEY")
-    secret_key = secret_key or os.getenv("LANGFUSE_SECRET_KEY")
+    public_key = public_key if public_key is not None else os.getenv("LANGFUSE_PUBLIC_KEY")
+    secret_key = secret_key if secret_key is not None else os.getenv("LANGFUSE_SECRET_KEY")
     base_url = (
         base_url
-        or os.getenv("LANGFUSE_BASE_URL")
-        or os.getenv("LANGFUSE_HOST")
-        or "https://cloud.langfuse.com"
+        if base_url is not None
+        else (os.getenv("LANGFUSE_BASE_URL") or os.getenv("LANGFUSE_HOST") or "https://cloud.langfuse.com")
     )
 
     if not public_key or not secret_key:
@@ -85,3 +91,21 @@ def setup_langfuse(
     except Exception as e:
         logger.exception("Failed to initialize Langfuse tracing: %s", e)
         return None
+
+
+def flush_langfuse(trace_provider: Optional[TracerProvider]) -> None:
+    """
+    Safely flush pending telemetry spans to Langfuse Cloud without raising exceptions.
+
+    Args:
+        trace_provider: Active OpenTelemetry TracerProvider, or None.
+    """
+    if trace_provider is None:
+        return
+
+    try:
+        logger.info("Flushing pending telemetry spans to Langfuse...")
+        trace_provider.force_flush()
+        logger.info("Langfuse telemetry flush completed successfully.")
+    except Exception as e:
+        logger.warning("Failed to flush Langfuse spans on shutdown: %s", e)
