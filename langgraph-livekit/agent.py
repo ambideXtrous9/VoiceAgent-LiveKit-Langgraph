@@ -47,6 +47,12 @@ from livekit.agents import (
 from livekit.plugins import noise_cancellation, silero
 from livekit.plugins.langchain import LLMAdapter
 
+from langfuse import observe
+try:
+    from telemetry_langfuse import flush_langfuse, is_langfuse_configured, setup_langfuse
+except ImportError:
+    from langgraph_livekit.telemetry_langfuse import flush_langfuse, is_langfuse_configured, setup_langfuse
+
 # ==============================================================================
 # 1. Configuration & Environment Setup
 # ==============================================================================
@@ -68,57 +74,86 @@ ddg_text_tool = DuckDuckGoSearchRun(api_wrapper=DuckDuckGoSearchAPIWrapper(max_r
 
 
 @tool
+@observe(name="get_weather")
 async def get_weather(city: str) -> str:
     """Get the current weather and temperature for a given city or location."""
+    sanitized_city = (city or "").strip().strip("'\"")
+    if not sanitized_city:
+        logger.warning("get_weather received empty or whitespace city name.")
+        return "Please specify a city name to check the weather."
+
     if not OPENWEATHER_API_KEY:
         logger.warning("OPENWEATHER_API_KEY is not configured.")
         return "Weather service is unavailable because the API key is not configured."
 
-    logger.info("Executing get_weather tool for: '%s'", city)
+    logger.info("Executing get_weather tool for: '%s'", sanitized_city)
     try:
         url = "https://api.openweathermap.org/data/2.5/weather"
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(timeout=6.0) as client:
             resp = await client.get(
                 url,
-                params={"q": city, "appid": OPENWEATHER_API_KEY, "units": "metric"},
+                params={"q": sanitized_city, "appid": OPENWEATHER_API_KEY, "units": "metric"},
             )
             if resp.status_code == 200:
                 data = resp.json()
-                name = data.get("name", city)
+                name = data.get("name", sanitized_city)
                 country = data.get("sys", {}).get("country", "")
                 temp = data["main"]["temp"]
                 desc = data["weather"][0]["description"]
                 humidity = data["main"]["humidity"]
                 logger.info("get_weather success for %s: %s, %s°C", name, desc, temp)
                 return f"Current weather in {name}, {country}: {desc}, {temp}°C, humidity {humidity}%."
-            return f"Could not find weather data for '{city}'."
+
+            if resp.status_code == 404:
+                logger.info("get_weather: City '%s' not found (404)", sanitized_city)
+                return f"I could not find weather data for '{sanitized_city}'. Please check the city name."
+
+            if resp.status_code in (401, 403):
+                logger.error("get_weather: OpenWeather authorization error (HTTP %d)", resp.status_code)
+                return "The weather service is temporarily unavailable due to an authorization issue."
+
+            logger.warning("get_weather unexpected status code %d for '%s'", resp.status_code, sanitized_city)
+            return f"Unable to retrieve weather for '{sanitized_city}' at this time."
+
+    except httpx.TimeoutException:
+        logger.warning("get_weather timed out for '%s'", sanitized_city)
+        return f"Weather service request for '{sanitized_city}' timed out. Please try again in a moment."
     except Exception as e:
-        logger.exception("get_weather error for '%s': %s", city, e)
-        return f"Unable to retrieve weather for {city} due to a network error."
+        logger.exception("get_weather network or decoding error for '%s': %s", sanitized_city, e)
+        return f"Unable to retrieve weather for '{sanitized_city}' due to a temporary network error."
 
 
 @tool
+@observe(name="get_news")
 async def get_news(query: str) -> str:
     """Get the latest news headlines and recent events for a topic, person, company, or location."""
-    logger.info("Executing get_news tool for query: '%s'", query)
+    sanitized_query = (query or "").strip().strip("'\"")
+    if not sanitized_query:
+        logger.warning("get_news received empty or whitespace query.")
+        return "Please specify a topic or keyword to search for news."
+
+    logger.info("Executing get_news tool for query: '%s'", sanitized_query)
+
+    # 1. Primary news search via DuckDuckGoSearchRun (source="news")
     try:
-        # 1. Primary news search via DuckDuckGoSearchRun (source="news")
-        res = await ddg_news_tool.ainvoke(query)
+        res = await ddg_news_tool.ainvoke(sanitized_query)
         if res and "No good DuckDuckGo Search Result was found" not in res:
-            logger.info("get_news success via news search for: '%s'", query)
-            return res
+            logger.info("get_news success via news search for: '%s'", sanitized_query)
+            # Truncate if excessively long for speech synthesis
+            return res[:1500].rsplit(" ", 1)[0] + "..." if len(res) > 1500 else res
     except Exception as e:
         logger.info("get_news news endpoint error: %s; falling back to text search", e)
 
     # 2. Fallback to general web search
     try:
-        res = await ddg_text_tool.ainvoke(f"{query} news")
+        res = await ddg_text_tool.ainvoke(f"{sanitized_query} news")
         if not res or "No good DuckDuckGo Search Result was found" in res:
-            res = await ddg_text_tool.ainvoke(query)
-        logger.info("get_news success via web search fallback for: '%s'", query)
-        return res or f"No recent news found for '{query}'."
+            res = await ddg_text_tool.ainvoke(sanitized_query)
+        logger.info("get_news success via web search fallback for: '%s'", sanitized_query)
+        clean_res = res or f"No recent news found for '{sanitized_query}'."
+        return clean_res[:1500].rsplit(" ", 1)[0] + "..." if len(clean_res) > 1500 else clean_res
     except Exception as e:
-        logger.warning("get_news text search error for '%s': %s", query, e)
+        logger.warning("get_news text search error for '%s': %s", sanitized_query, e)
         return f"Unable to fetch news at the moment: {e}"
 
 
@@ -143,6 +178,7 @@ class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
 
 
+@observe(name="langgraph_agent_node")
 async def agent_node(state: AgentState) -> dict:
     """Agent node: decides whether to respond directly or invoke tools."""
     system_prompt = (
@@ -154,17 +190,21 @@ async def agent_node(state: AgentState) -> dict:
         "Use get_news when asked about current events, news, or latest updates."
     )
 
-    history = list(state.get("messages", []))[-6:]
+    history = list(state.get("messages", []))[-6:] if state.get("messages") else []
     messages = [SystemMessage(content=system_prompt)] + history
     logger.info("Agent node evaluating %d messages in context", len(messages))
 
-    response = await llm_with_tools.ainvoke(messages)
-    if response.tool_calls:
-        logger.info("Agent decided to call tools: %s", [tc["name"] for tc in response.tool_calls])
-    else:
-        logger.info("Agent generating direct spoken reply")
-
-    return {"messages": [response]}
+    try:
+        response = await llm_with_tools.ainvoke(messages)
+        if response.tool_calls:
+            logger.info("Agent decided to call tools: %s", [tc["name"] for tc in response.tool_calls])
+        else:
+            logger.info("Agent generating direct spoken reply")
+        return {"messages": [response]}
+    except Exception as e:
+        logger.exception("Error during LLM inference in agent_node: %s", e)
+        from langchain_core.messages import AIMessage
+        return {"messages": [AIMessage(content="I encountered a momentary connection issue. Could you please repeat that?")]}
 
 
 class VoiceGraphWrapper:
@@ -183,7 +223,9 @@ class VoiceGraphWrapper:
             if isinstance(item, tuple) and len(item) == 2:
                 token, meta = item
                 # Suppress tool execution outputs from being streamed to TTS
-                if meta.get("langgraph_node") == "tools" or type(token).__name__ == "ToolMessage":
+                if isinstance(meta, dict) and meta.get("langgraph_node") == "tools":
+                    continue
+                if type(token).__name__ == "ToolMessage" or getattr(token, "type", None) == "tool":
                     continue
             yield item
 
@@ -217,22 +259,31 @@ def setup_session_telemetry(session: AgentSession, ctx: JobContext) -> None:
     @session.on("metrics_collected")
     def _on_metrics_collected(ev: MetricsCollectedEvent):
         nonlocal last_eou_metrics
-        if ev.metrics.type == "eou_metrics":
-            last_eou_metrics = ev.metrics
-        metrics.log_metrics(ev.metrics)
-        usage_collector.collect(ev.metrics)
+        try:
+            if ev.metrics.type == "eou_metrics":
+                last_eou_metrics = ev.metrics
+            metrics.log_metrics(ev.metrics)
+            usage_collector.collect(ev.metrics)
+        except Exception as e:
+            logger.warning("Error processing collected metric: %s", e)
 
     async def log_usage_summary():
-        logger.info("Session usage summary: %s", usage_collector.get_summary())
+        try:
+            logger.info("Session usage summary: %s", usage_collector.get_summary())
+        except Exception as e:
+            logger.warning("Failed to retrieve usage summary: %s", e)
 
     ctx.add_shutdown_callback(log_usage_summary)
 
     @session.on("agent_state_changed")
     def _on_agent_state_changed(ev: AgentStateChangedEvent):
-        logger.info("Agent state transitioned to: %s", ev.new_state)
-        if ev.new_state == "speaking" and last_eou_metrics:
-            ttfa = time.time() - last_eou_metrics.timestamp
-            logger.info("Time to first audio (TTFA): %.3fs", ttfa)
+        try:
+            logger.info("Agent state transitioned to: %s", ev.new_state)
+            if ev.new_state == "speaking" and last_eou_metrics:
+                ttfa = time.time() - last_eou_metrics.timestamp
+                logger.info("Time to first audio (TTFA): %.3fs", ttfa)
+        except Exception as e:
+            logger.warning("Error processing agent state change: %s", e)
 
 
 # ==============================================================================
@@ -257,6 +308,18 @@ server = AgentServer()
 async def EntryPoint(ctx: JobContext):
     """RTC Session entrypoint: mounts LangGraph agent, STT/TTS fallbacks, and BVC audio."""
     logger.info("Initializing LiveKit RTC Session for room: %s", ctx.room.name)
+
+    # Initialize Langfuse OpenTelemetry tracing
+    trace_provider = setup_langfuse(
+        metadata={
+            "langfuse.session.id": ctx.room.name,
+        }
+    )
+    if trace_provider:
+        async def flush_langfuse_traces():
+            flush_langfuse(trace_provider)
+
+        ctx.add_shutdown_callback(flush_langfuse_traces)
 
     # Compile the LangGraph tool-calling agent workflow
     langgraph_workflow = build_langgraph_workflow()
