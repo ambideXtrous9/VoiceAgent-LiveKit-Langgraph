@@ -12,8 +12,15 @@ from livekit.agents import llm, stt, tts, inference
 # Capturing usage metrics
 from livekit.agents import AgentStateChangedEvent, MetricsCollectedEvent, metrics
 import time
+import sys
+from pathlib import Path
 
-from telemetry_langfuse import flush_langfuse, setup_langfuse
+# Ensure project root is in sys.path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.telemetry import flush_langfuse, setup_langfuse
 
 logger = logging.getLogger(__name__)
 

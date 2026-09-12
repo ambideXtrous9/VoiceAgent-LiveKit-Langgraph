@@ -141,7 +141,7 @@ A real-time, ultra-low-latency voice assistant combining **LiveKit WebRTC transp
 
 LangGraph emits tokens from **all nodes** in `stream_mode="messages"`. Without filtering, raw JSON payloads from `ToolNode` would be spoken aloud by TTS before the assistant answers.
 
-[`langgraph-livekit/agent.py`](langgraph-livekit/agent.py) solves this with a lightweight streaming wrapper:
+[`src/graph.py`](src/graph.py) solves this with a lightweight streaming wrapper:
 
 ```python
 class VoiceGraphWrapper:
@@ -250,7 +250,7 @@ sequenceDiagram
 
 ## 🎨 Aesthetic Reactive Web UI
 
-Located in [`langgraph-livekit/ui/`](langgraph-livekit/ui/):
+Located in [`ui/`](ui/):
 - **Dynamic Reactive Orb**: HTML5 Canvas running harmonic sine-wave oscillations mapped to 60fps Fast Fourier Transform (FFT) byte frequency data.
 - **Color-Coded State Machine**:
   - `Idle`: Soft ambient glow.
@@ -310,18 +310,18 @@ Managed via [`uv`](https://docs.astral.sh/uv/) on Python 3.13+:
 uv sync
 
 # Download Silero VAD and TurnDetector model weights
-uv run langgraph-livekit/agent.py download-files
+uv run python src/agent.py download-files
 ```
 
 ### 3. Execution Commands
 
 | Mode | Command | Description |
 | :--- | :--- | :--- |
-| **Web UI (Recommended)** | `cd langgraph-livekit && uv run agent.py dev`<br>`cd langgraph-livekit && uv run python ui/server.py` | Full experience. Open `http://localhost:7860` in browser. |
-| **Dev Worker** | `cd langgraph-livekit && uv run agent.py dev` | Runs agent worker waiting for room connections. |
-| **Console Mode** | `cd langgraph-livekit && uv run agent.py console` | Interactive voice test using your local mic/speakers (no browser). |
+| **Web UI (Recommended)** | `uv run python src/agent.py dev`<br>`uv run python ui/server.py` | Full experience. Open `http://localhost:7860` in browser. |
+| **Dev Worker** | `uv run python src/agent.py dev` | Runs agent worker waiting for room connections. |
+| **Console Mode** | `uv run python src/agent.py console` | Interactive voice test using your local mic/speakers (no browser). |
 | **Playground** | Open [agents-playground.livekit.io](https://agents-playground.livekit.io) | Connect to your LiveKit Cloud project directly. |
-| **Production** | `cd langgraph-livekit && uv run agent.py start` | High-concurrency production worker daemon. |
+| **Production** | `uv run python src/agent.py start` | High-concurrency production worker daemon. |
 
 ---
 
@@ -331,13 +331,13 @@ Run diagnostics without needing an active browser session:
 
 ```bash
 # 1. Edge-Case & Resilience Suite (Weather/News boundaries, Unicode, Wrapper suppression)
-uv run python langgraph-livekit/test_edgecases.py
+uv run python tests/test_edgecases.py
 
-# 2. Langfuse Tracing & OpenTelemetry Connectivity Suite
-uv run python langgraph-livekit/test_langfuse.py
+# 2. Direct Tool Calling & LangGraph Agent Workflow Suite
+uv run python tests/test_agent.py
 
-# 3. LangGraph Agent & Tool Calling Diagnostic Suite
-uv run python langgraph-livekit/test_tools.py
+# 3. Langfuse Tracing & OpenTelemetry Connectivity Suite
+uv run python tests/test_telemetry.py
 ```
 
 ---
@@ -350,17 +350,26 @@ VoiceAgent-LiveKit-Langgraph/
 ├── pyproject.toml              # Dependencies (LiveKit, LangGraph, Groq, Langfuse)
 ├── uv.lock                     # Locked dependency tree
 ├── .env.example                # Environment variables template
-├── telemetry_langfuse.py       # Root Langfuse OpenTelemetry setup helper
-├── livekit-agent.py            # Reference LiveKit pipeline implementation
-└── langgraph-livekit/          # Core application package
-    ├── agent.py                # Main LangGraph tool-calling voice agent
-    ├── telemetry_langfuse.py   # Langfuse tracing & span instrumentation
-    ├── test_edgecases.py       # Full edge-case & resilience test suite
-    ├── test_langfuse.py        # Langfuse connectivity test suite
-    ├── test_tools.py           # Tool-calling diagnostic suite
-    └── ui/
-        ├── index.html          # Aesthetic reactive Web Audio canvas interface
-        └── server.py           # Lightweight token-issuing HTTP server (:7860 / :8080)
+├── .gitignore                  # Git ignore rules
+├── .python-version             # Python version pin (3.13)
+├── docs/                       # Documentation assets
+│   └── architecture.png        # System architecture visual reference
+├── examples/                   # Reference implementations
+│   └── basic_agent.py          # Minimal LiveKit pipeline agent
+├── src/                        # Core application package
+│   ├── __init__.py             # Package exports
+│   ├── agent.py                # Main LiveKit VoicePipelineAgent worker
+│   ├── graph.py                # LangGraph ReAct state machine & VoiceGraphWrapper
+│   ├── telemetry.py            # Langfuse & OpenTelemetry trace instrumentation
+│   └── tools.py                # Weather (OpenWeather) & News (DuckDuckGo) tools
+├── tests/                      # Automated test suites
+│   ├── __init__.py             # Test package marker
+│   ├── test_agent.py           # Tool-calling & LangGraph workflow test
+│   ├── test_edgecases.py       # Full edge-case & resilience test suite
+│   └── test_telemetry.py       # Langfuse tracing & OpenTelemetry test
+└── ui/                         # Web frontend & token server
+    ├── index.html              # Reactive audio visualizer interface
+    └── server.py               # Lightweight token-issuing HTTP server (:7860)
 ```
 
 ---

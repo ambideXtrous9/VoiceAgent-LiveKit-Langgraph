@@ -4,12 +4,19 @@ Lightweight Web Server for the LiveKit Voice Agent UI.
 Serves the aesthetic web frontend and provides LiveKit WebRTC access tokens.
 """
 
-import os
-import uuid
 import logging
+import os
+import sys
+import uuid
+from pathlib import Path
 from aiohttp import web
 from dotenv import find_dotenv, load_dotenv
 from livekit import api
+
+# Ensure project root is in sys.path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 # Load environment configuration
 load_dotenv(find_dotenv())
@@ -78,38 +85,37 @@ async def handle_token(request: web.Request) -> web.Response:
 
 
 async def handle_health(request: web.Request) -> web.Response:
-    """Health check endpoint providing service status and configuration diagnostics."""
+    """Health check endpoint for container environments and monitoring."""
     return web.json_response({
         "status": "healthy",
+        "service": "livekit-voice-agent-ui",
         "livekit_configured": bool(LIVEKIT_URL and LIVEKIT_API_KEY and LIVEKIT_API_SECRET),
-        "livekit_url": LIVEKIT_URL or "not_configured",
-        "port": PORT,
     })
 
 
 async def handle_index(request: web.Request) -> web.FileResponse:
-    """Serve the single-page application index.html."""
-    index_file = os.path.join(STATIC_DIR, "index.html")
-    if not os.path.exists(index_file):
-        raise web.HTTPNotFound(text="UI index.html not found.")
-    return web.FileResponse(index_file)
+    """Serve the single-page voice visualizer application."""
+    index_path = os.path.join(STATIC_DIR, "index.html")
+    if not os.path.exists(index_path):
+        return web.Response(text="index.html not found", status=404)
+    return web.FileResponse(index_path)
 
 
 def create_app() -> web.Application:
-    """Construct and configure the aiohttp web application with route handlers."""
+    """Factory creating the aiohttp application."""
     app = web.Application()
     app.router.add_get("/", handle_index)
     app.router.add_get("/health", handle_health)
     app.router.add_get("/api/token", handle_token)
-    app.router.add_static("/static/", path=STATIC_DIR, name="static")
+    app.router.add_static("/static", STATIC_DIR)
     return app
 
 
 if __name__ == "__main__":
     app = create_app()
-    print("=" * 60)
-    print(f"🎙️  LiveKit Voice Agent Web UI Server")
-    print(f"🔗  Open in Browser: http://localhost:{PORT}")
-    print(f"🩺  Health Check  : http://localhost:{PORT}/health")
-    print("=" * 60)
-    web.run_app(app, host="0.0.0.0", port=PORT, print=None)
+    logger.info("=================================================================")
+    logger.info("🎙️  Starting Voice Agent UI Server on http://localhost:%d", PORT)
+    logger.info("   • Health check: http://localhost:%d/health", PORT)
+    logger.info("   • Token endpoint: http://localhost:%d/api/token", PORT)
+    logger.info("=================================================================")
+    web.run_app(app, host="0.0.0.0", port=PORT)
