@@ -1,0 +1,52 @@
+services:
+  # ============================================================================
+  # 1. Web UI & Token Server (aiohttp on port 7860)
+  # ============================================================================
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: voiceagent-web:latest
+    container_name: voiceagent-web
+    command: ["python", "web/server.py"]
+    ports:
+      - "7860:7860"
+    env_file:
+      - .env
+    environment:
+      - PORT=7860
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:7860/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - voiceagent-net
+
+  # ============================================================================
+  # 2. LiveKit Voice Agent Worker (LangGraph + VAD/STT/TTS Pipeline)
+  # ============================================================================
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: voiceagent-agent:latest
+    container_name: voiceagent-agent
+    command: ["python", "src/agent.py", "start"]
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - voiceagent-net
+
+networks:
+  voiceagent-net:
+    driver: bridge

@@ -317,11 +317,33 @@ uv run python src/agent.py download-files
 
 | Mode | Command | Description |
 | :--- | :--- | :--- |
-| **Web UI (Recommended)** | `uv run python src/agent.py dev`<br>`uv run python web/server.py` | Full experience. Open `http://localhost:7860` in browser. |
+| **Docker Compose (All-in-One)** | `docker compose up --build` | Full containerized stack (Web UI on port 7860 + Agent worker) with healthchecks. |
+| **Web UI (Local)** | `uv run python src/agent.py dev`<br>`uv run python web/server.py` | Full local experience. Open `http://localhost:7860` in browser. |
 | **Dev Worker** | `uv run python src/agent.py dev` | Runs agent worker waiting for room connections. |
 | **Console Mode** | `uv run python src/agent.py console` | Interactive voice test using your local mic/speakers (no browser). |
 | **Playground** | Open [agents-playground.livekit.io](https://agents-playground.livekit.io) | Connect to your LiveKit Cloud project directly. |
-| **Production** | `uv run python src/agent.py start` | High-concurrency production worker daemon. |
+| **Production Worker** | `uv run python src/agent.py start` | High-concurrency production worker daemon. |
+
+### 4. 🐳 Docker & Docker Compose Guide
+
+The repository includes a production-grade, multi-stage `Dockerfile` with pre-cached model weights and non-root security.
+
+```bash
+# Start both Web UI (:7860) and Agent Worker:
+docker compose up --build
+
+# Run in detached background mode:
+docker compose up -d
+
+# Follow real-time streaming logs:
+docker compose logs -f
+
+# Check container health and status:
+docker compose ps
+
+# Graceful shutdown:
+docker compose down
+```
 
 ---
 
@@ -346,6 +368,9 @@ uv run python tests/test_telemetry.py
 
 ```
 VoiceAgent-LiveKit-Langgraph/
+├── Dockerfile                  # Multi-stage production container image (uv + pre-cached models)
+├── docker-compose.yml          # Container orchestration (web + agent worker)
+├── .dockerignore               # Docker build exclusions
 ├── README.md                   # Consolidated project documentation
 ├── pyproject.toml              # Dependencies (LiveKit, LangGraph, Groq, Langfuse)
 ├── uv.lock                     # Locked dependency tree

@@ -1,0 +1,38 @@
+# Version control
+.git
+.gitignore
+
+# Virtual environment & dependencies
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Local configurations & secrets
+.env
+.env.*
+!.env.example
+
+# Test artifacts & caches
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Development & editor files
+.idea/
+.vscode/
+*.code-workspace
+.DS_Store
+Thumbs.db
+*.log
+
+# Non-runtime documentation & tests
+tests/
+docs/
+examples/
