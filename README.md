@@ -280,12 +280,12 @@ sequenceDiagram
     BE->>SFU: session.generate_reply("Greet the caller warmly...")
     SFU-->>FE: Plays initial agent greeting audio
 
-    Note over FE,BE: Phase 3: Upstream Audio Ingestion (FE -> BE)
+    Note over FE,BE: Phase 3: Upstream Audio Ingestion (FE to BE)
     FE->>FE: navigator.mediaDevices.getUserMedia({ audio: true })
     FE->>FE: Attach mic to Web Audio Analyser (FFT frequency capture)
     FE->>SFU: room.localParticipant.setMicrophoneEnabled(true) [Opus 48kHz RTP]
     SFU->>BE: Relays user audio stream
-    Note over BE: BVC noise cancellation -> Silero VAD -> TurnDetector (EOU)
+    Note over BE: BVC noise cancellation | Silero VAD | TurnDetector (EOU)
     BE->>Ext: AssemblyAI streaming STT
     Ext-->>BE: Transcribed user text: "What's the weather in Tokyo?"
 
@@ -298,9 +298,9 @@ sequenceDiagram
         Ext-->>Graph: ToolMessage("Tokyo, JP: Clear, 18°C")
         Graph->>Ext: Groq synthesizes conversational voice reply
     end
-    Note over Graph,BE: VoiceGraphWrapper suppresses ToolMessage; streams clean assistant tokens
+    Note over Graph,BE: VoiceGraphWrapper suppresses ToolMessage and streams clean assistant tokens
 
-    Note over BE,FE: Phase 5: Downstream Audio Synthesis & Delivery (BE -> FE)
+    Note over BE,FE: Phase 5: Downstream Audio Synthesis & Delivery (BE to FE)
     BE->>Ext: Streams spoken text tokens to Cartesia Sonic-3 TTS
     Ext-->>BE: Synthesized PCM audio packets
     BE->>SFU: Publishes Agent Audio Track into room
