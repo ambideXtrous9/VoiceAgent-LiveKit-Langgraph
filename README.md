@@ -1,6 +1,7 @@
 # 🎙️ LiveKit + LangGraph Tool-Calling Voice Agent
 
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/)
+[![Docker](https://img.shields.io/badge/Docker-Compose_Ready-2496ED.svg?logo=docker&logoColor=white)](https://www.docker.com/)
 [![LiveKit Agents](https://img.shields.io/badge/LiveKit_Agents-1.3+-002B36.svg)](https://docs.livekit.io/agents/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-1.2+-black.svg)](https://langchain-ai.github.io/langgraph/)
 [![Groq](https://img.shields.io/badge/Groq-gpt--oss--20b-F55036.svg)](https://groq.com/)
@@ -16,8 +17,9 @@ A real-time, ultra-low-latency voice assistant combining **LiveKit WebRTC transp
 - [🧠 LangGraph Agent & Tool Calling](#-langgraph-agent--tool-calling)
 - [🌐 Frontend ⇄ Backend Communication (WebRTC vs. FastAPI)](#-frontend--backend-communication-webrtc-vs-fastapi)
 - [🌐 Web Interface & Token Server](#-web-interface--token-server)
+- [🐳 Docker & Docker Compose](#-docker--docker-compose)
 - [🔍 Production Observability with Langfuse](#-production-observability-with-langfuse)
-- [⚡ Quickstart & Execution Guide](#-quickstart--execution-guide)
+- [⚡ Quickstart & Local Execution](#-quickstart--local-execution)
 - [🧪 Automated Test Suites](#-automated-test-suites)
 - [📁 Repository Structure](#-repository-structure)
 - [📚 References & Documentation](#-references--documentation)
@@ -282,7 +284,73 @@ Every session, recognition turn, tool execution, and synthesis span is automatic
 
 ---
 
-## ⚡ Quickstart & Execution Guide
+---
+
+## 🐳 Docker & Docker Compose
+
+The application is fully containerized using a production-grade, multi-stage [`Dockerfile`](Dockerfile) and orchestrated via [`docker-compose.yml`](docker-compose.yml):
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          DOCKER COMPOSE ORCHESTRATION                       │
+│                                                                             │
+│  [ Host Browser ] ────────── Port 7860 ──────────┐                          │
+│                                                  │                          │
+│  ┌───────────────────────────────────────────────┼──────────────────────┐   │
+│  │ Bridge Network: voiceagent-net                │                      │   │
+│  │                                               ▼                      │   │
+│  │  ┌────────────────────────────────────────────────────────────────┐  │   │
+│  │  │ Container: voiceagent-web                                      │  │   │
+│  │  │ • Image: voiceagent-web:latest                                 │  │   │
+│  │  │ • Command: python web/server.py                                │  │   │
+│  │  │ • Endpoints: / (UI), /api/token, /health                       │  │   │
+│  │  │ • Healthcheck: curl -f http://localhost:7860/health            │  │   │
+│  │  └───────────────────────────────┬────────────────────────────────┘  │   │
+│  │                                  │                                   │   │
+│  │                        healthy   │ depends_on                        │   │
+│  │                                  ▼                                   │   │
+│  │  ┌────────────────────────────────────────────────────────────────┐  │   │
+│  │  │ Container: voiceagent-agent                                    │  │   │
+│  │  │ • Image: voiceagent-agent:latest                               │  │   │
+│  │  │ • Command: python src/agent.py start                           │  │   │
+│  │  │ • Models: Silero VAD + TurnDetector (pre-cached during build)  │  │   │
+│  │  │ • Connects autonomously to LiveKit SFU Cloud room              │  │   │
+│  │  └────────────────────────────────────────────────────────────────┘  │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Container Architecture & Highlights
+
+| Feature | Implementation | Benefit |
+| :--- | :--- | :--- |
+| **Multi-Stage Build** | `builder` (`uv` dependency resolver) ➔ `runner` | Keeps runtime image lean with zero compiler overhead. |
+| **Pre-Cached Models** | `RUN python src/agent.py download-files` | Silero VAD & TurnDetector weights baked into image; zero cold-start delay. |
+| **Automated Healthcheck** | Pings `/health` on `voiceagent-web` | Agent worker waits for token service to be healthy before booting. |
+| **Least Privilege Security**| Non-root user `appuser:appuser` (UID 1001) | Prevents container escape risks and complies with enterprise policies. |
+
+### Docker Commands
+
+```bash
+# Start both Web UI (:7860) and Agent Worker:
+docker compose up --build
+
+# Run in detached background mode:
+docker compose up -d
+
+# Follow real-time streaming container logs:
+docker compose logs -f
+
+# Check container health and status:
+docker compose ps
+
+# Graceful shutdown:
+docker compose down
+```
+
+---
+
+## ⚡ Quickstart & Local Execution
 
 ### 1. Prerequisites & Environment
 
@@ -301,7 +369,7 @@ Set the required credentials in `.env`:
 - `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL` ([cloud.langfuse.com](https://cloud.langfuse.com))
 - `OPENWEATHER_API_KEY` ([openweathermap.org](https://openweathermap.org/api))
 
-### 2. Dependency Installation
+### 2. Local Dependency Installation
 
 Managed via [`uv`](https://docs.astral.sh/uv/) on Python 3.13+:
 
@@ -313,37 +381,15 @@ uv sync
 uv run python src/agent.py download-files
 ```
 
-### 3. Execution Commands
+### 3. Local Run Commands
 
 | Mode | Command | Description |
 | :--- | :--- | :--- |
-| **Docker Compose (All-in-One)** | `docker compose up --build` | Full containerized stack (Web UI on port 7860 + Agent worker) with healthchecks. |
-| **Web UI (Local)** | `uv run python src/agent.py dev`<br>`uv run python web/server.py` | Full local experience. Open `http://localhost:7860` in browser. |
+| **Web UI (Local Full Stack)** | `uv run python src/agent.py dev`<br>`uv run python web/server.py` | Run both worker and web server locally. Open `http://localhost:7860`. |
 | **Dev Worker** | `uv run python src/agent.py dev` | Runs agent worker waiting for room connections. |
 | **Console Mode** | `uv run python src/agent.py console` | Interactive voice test using your local mic/speakers (no browser). |
 | **Playground** | Open [agents-playground.livekit.io](https://agents-playground.livekit.io) | Connect to your LiveKit Cloud project directly. |
 | **Production Worker** | `uv run python src/agent.py start` | High-concurrency production worker daemon. |
-
-### 4. 🐳 Docker & Docker Compose Guide
-
-The repository includes a production-grade, multi-stage `Dockerfile` with pre-cached model weights and non-root security.
-
-```bash
-# Start both Web UI (:7860) and Agent Worker:
-docker compose up --build
-
-# Run in detached background mode:
-docker compose up -d
-
-# Follow real-time streaming logs:
-docker compose logs -f
-
-# Check container health and status:
-docker compose ps
-
-# Graceful shutdown:
-docker compose down
-```
 
 ---
 
