@@ -139,11 +139,48 @@ A real-time, ultra-low-latency voice assistant combining **LiveKit WebRTC transp
 | **`get_weather`** | OpenWeather Current API 2.5 | `city: str` | Temperature (°C), humidity, conditions. Handled in ~200ms. |
 | **`get_news`** | DuckDuckGo News Search | `query: str` | Top 3 news headlines. Auto-falls back to web search on rate limit (403). |
 
-### Streaming Isolation: `VoiceGraphWrapper`
+### Streaming Isolation Bridge: `VoiceGraphWrapper`
 
-LangGraph emits tokens from **all nodes** in `stream_mode="messages"`. Without filtering, raw JSON payloads from `ToolNode` would be spoken aloud by TTS before the assistant answers.
+#### Why is `VoiceGraphWrapper` Necessary?
 
-[`src/graph.py`](src/graph.py) solves this with a lightweight streaming wrapper:
+When LiveKit's `LLMAdapter` consumes a model stream, it pipes tokens from `astream()` directly into the **Cartesia TTS** audio synthesizer in real time.
+
+In a LangGraph ReAct state machine (`agent` ➔ `tools` ➔ `agent`), `stream_mode="messages"` yields chunks from **every node in the graph**, including `ToolNode`:
+
+```
+                       ┌────────────────────────┐
+                       │  LangGraph Workflow    │
+                       └───────────┬────────────┘
+                                   │
+            ┌──────────────────────┴──────────────────────┐
+            │                                             │
+   ToolMessage Tokens                            Assistant AIMessage Tokens
+ (from "tools" / ToolNode)                         (from "agent" node)
+            │                                             │
+            ▼                                             ▼
+  ┌──────────────────────────────────────────────────────────────┐
+  │                     VoiceGraphWrapper                        │
+  │   if node == "tools" or isinstance(token, ToolMessage):      │
+  │         DROP (Suppress from audio stream)                    │
+  └──────────────────────────────┬───────────────────────────────┘
+                                 │
+                                 ▼ Only Clean Spoken Tokens
+                      ┌────────────────────┐
+                      │    LiveKit TTS     │
+                      │   (Cartesia)       │
+                      └─────────┬──────────┘
+                                ▼
+       🔊 "It's currently cloudy in Tokyo at around 21°C."
+```
+
+#### What Happens Without vs. With `VoiceGraphWrapper`
+
+| Scenario | What Happens Under the Hood | Caller Audio Experience |
+| :--- | :--- | :--- |
+| **Without Wrapper** ❌ | LangGraph yields raw `ToolMessage` strings directly to TTS. | **Bot speaks twice**: First reads raw JSON/API strings aloud (*"Current weather in Tokyo comma J P colon..."*), then speaks the conversational reply. |
+| **With Wrapper** ✅ | Intercepts `astream()` and silently drops all chunks where `langgraph_node == "tools"`. | **Zero machine noise**: Caller hears only the natural, synthesized voice response. |
+
+#### Implementation ([`src/graph.py`](src/graph.py))
 
 ```python
 class VoiceGraphWrapper:
@@ -151,12 +188,18 @@ class VoiceGraphWrapper:
     def __init__(self, graph):
         self._graph = graph
 
+    def __getattr__(self, name):
+        # Passes through all other LangGraph attributes (ainvoke, get_state, etc.)
+        return getattr(self._graph, name)
+
     async def astream(self, *args, **kwargs):
         async for item in self._graph.astream(*args, **kwargs):
             if isinstance(item, tuple) and len(item) == 2:
                 token, meta = item
+                # 🚫 Suppress internal tool outputs from reaching TTS
                 if meta.get("langgraph_node") == "tools" or type(token).__name__ == "ToolMessage":
-                    continue  # Suppress internal tool outputs from audio
+                    continue
+            # ✅ Stream only conversational tokens
             yield item
 ```
 
