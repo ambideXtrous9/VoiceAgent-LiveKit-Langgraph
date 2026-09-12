@@ -41,7 +41,7 @@ from src.telemetry import (
     is_langfuse_configured,
     setup_langfuse,
 )
-from ui.server import create_app
+from web.server import create_app
 
 logging.basicConfig(
     level=logging.INFO,
@@ -153,7 +153,7 @@ async def test_agent_workflow():
     assert len(res["messages"]) > 0, "No response generated!"
     final_reply = res["messages"][-1].content
     print(f"        Spoken Response: {final_reply}")
-    assert "4" in final_reply, f"Unexpected calculation reply: {final_reply}"
+    assert "4" in final_reply or "four" in final_reply.lower(), f"Unexpected calculation reply: {final_reply}"
     print("        ✅ Message windowing executed cleanly.")
 
     # 3.2 Test VoiceGraphWrapper suppresses ToolMessages

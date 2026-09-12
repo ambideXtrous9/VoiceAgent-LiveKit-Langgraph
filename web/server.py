@@ -21,7 +21,7 @@ if str(PROJECT_ROOT) not in sys.path:
 # Load environment configuration
 load_dotenv(find_dotenv())
 
-logger = logging.getLogger("livekit.ui_server")
+logger = logging.getLogger("livekit.web_server")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 LIVEKIT_URL = os.getenv("LIVEKIT_URL")
@@ -88,7 +88,7 @@ async def handle_health(request: web.Request) -> web.Response:
     """Health check endpoint for container environments and monitoring."""
     return web.json_response({
         "status": "healthy",
-        "service": "livekit-voice-agent-ui",
+        "service": "livekit-voice-agent-web",
         "livekit_configured": bool(LIVEKIT_URL and LIVEKIT_API_KEY and LIVEKIT_API_SECRET),
     })
 
@@ -114,7 +114,7 @@ def create_app() -> web.Application:
 if __name__ == "__main__":
     app = create_app()
     logger.info("=================================================================")
-    logger.info("🎙️  Starting Voice Agent UI Server on http://localhost:%d", PORT)
+    logger.info("🎙️  Starting Voice Agent Web Server on http://localhost:%d", PORT)
     logger.info("   • Health check: http://localhost:%d/health", PORT)
     logger.info("   • Token endpoint: http://localhost:%d/api/token", PORT)
     logger.info("=================================================================")

@@ -15,7 +15,7 @@ A real-time, ultra-low-latency voice assistant combining **LiveKit WebRTC transp
 - [🏛️ System Architecture](#️-system-architecture)
 - [🧠 LangGraph Agent & Tool Calling](#-langgraph-agent--tool-calling)
 - [🌐 Frontend ⇄ Backend Communication (WebRTC vs. FastAPI)](#-frontend--backend-communication-webrtc-vs-fastapi)
-- [🎨 Aesthetic Reactive Web UI](#-aesthetic-reactive-web-ui)
+- [🌐 Web Interface & Token Server](#-web-interface--token-server)
 - [🔍 Production Observability with Langfuse](#-production-observability-with-langfuse)
 - [⚡ Quickstart & Execution Guide](#-quickstart--execution-guide)
 - [🧪 Automated Test Suites](#-automated-test-suites)
@@ -176,7 +176,7 @@ class VoiceGraphWrapper:
 ┌──────────────────────────────────────────────────────────────────────────────────┐
 │                     2. OUR ARCHITECTURE (LIVEKIT DECOUPLED SFU)                  │
 │                                                                                  │
-│   [Browser FE] ── 1. HTTP Auth Handshake ──► [ui/server.py] (Token Server)       │
+│   [Browser FE] ── 1. HTTP Auth Handshake ──► [web/server.py] (Token Server)      │
 │        │                                                                         │
 │        │ 2. WebRTC PeerConnection (UDP / SRTP / Opus 48kHz)                      │
 │        ▼                                                                         │
@@ -248,9 +248,9 @@ sequenceDiagram
 
 ---
 
-## 🎨 Aesthetic Reactive Web UI
+## 🌐 Web Interface & Token Server
 
-Located in [`ui/`](ui/):
+Located in [`web/`](web/):
 - **Dynamic Reactive Orb**: HTML5 Canvas running harmonic sine-wave oscillations mapped to 60fps Fast Fourier Transform (FFT) byte frequency data.
 - **Color-Coded State Machine**:
   - `Idle`: Soft ambient glow.
@@ -317,7 +317,7 @@ uv run python src/agent.py download-files
 
 | Mode | Command | Description |
 | :--- | :--- | :--- |
-| **Web UI (Recommended)** | `uv run python src/agent.py dev`<br>`uv run python ui/server.py` | Full experience. Open `http://localhost:7860` in browser. |
+| **Web UI (Recommended)** | `uv run python src/agent.py dev`<br>`uv run python web/server.py` | Full experience. Open `http://localhost:7860` in browser. |
 | **Dev Worker** | `uv run python src/agent.py dev` | Runs agent worker waiting for room connections. |
 | **Console Mode** | `uv run python src/agent.py console` | Interactive voice test using your local mic/speakers (no browser). |
 | **Playground** | Open [agents-playground.livekit.io](https://agents-playground.livekit.io) | Connect to your LiveKit Cloud project directly. |
@@ -367,7 +367,7 @@ VoiceAgent-LiveKit-Langgraph/
 │   ├── test_agent.py           # Tool-calling & LangGraph workflow test
 │   ├── test_edgecases.py       # Full edge-case & resilience test suite
 │   └── test_telemetry.py       # Langfuse tracing & OpenTelemetry test
-└── ui/                         # Web frontend & token server
+└── web/                        # Web frontend & token server
     ├── index.html              # Reactive audio visualizer interface
     └── server.py               # Lightweight token-issuing HTTP server (:7860)
 ```
